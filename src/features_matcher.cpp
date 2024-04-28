@@ -3,6 +3,11 @@
 #include <iostream>
 #include <map>
 
+//std::vector<std::string> images_names_;
+//std::vector< std::vector<cv::KeyPoint> > features_;
+//std::vector< std::vector<cv::Vec3b > > feats_colors_;
+//std::vector< cv::Mat > descriptors_;
+
 FeatureMatcher::FeatureMatcher(cv::Mat intrinsics_matrix, cv::Mat dist_coeffs, double focal_scale)
 {
   intrinsics_matrix_ = intrinsics_matrix.clone();
@@ -26,6 +31,12 @@ void FeatureMatcher::extractFeatures()
   descriptors_.resize(images_names_.size());
   feats_colors_.resize(images_names_.size());
 
+  //Used to select the best descriptor: ORB,SURF,SIFT
+  int feature_detector_type = 0;
+  cv::Ptr<cv::ORB> orb_detector = cv::ORB::create(); //0
+  cv::Ptr<cv::BRISK> brisk_detector = cv::BRISK::create(); //1
+  cv::Ptr<cv::AKAZE> akaze_detector = cv::AKAZE::create(); //2
+
   for( int i = 0; i < images_names_.size(); i++  )
   {
     std::cout<<"Computing descriptors for image "<<i<<std::endl;
@@ -37,10 +48,33 @@ void FeatureMatcher::extractFeatures()
     // Extract also the color (i.e., the cv::Vec3b information) of each feature, and store
     // it into feats_colors_[i] vector
     /////////////////////////////////////////////////////////////////////////////////////////
-
-
     
+    switch (feature_detector_type)
+    {
+      case 0:
+        orb_detector->detectAndCompute(img,cv::Mat(),features_[i],descriptors_[i]);
+        break;
+      
+      case 1:
+        brisk_detector->detectAndCompute(img,cv::Mat(),features_[i],descriptors_[i]);
+        break;
+      
+      case 2:
+        akaze_detector->detectAndCompute(img,cv::Mat(),features_[i],descriptors_[i]);
+        break;
+    }
     
+    for(int j=0;j<features_[i].size();j++)
+    {
+      cv::Vec3b color = img.at<cv::Vec3b>(features_[i][j].pt);
+
+      /*Maybe
+      int x = features_[i][j].pt.x;
+      int y = features_[i][j].pt.y;
+      cv::Vec3b color = img.at<cv::Vec3b>(y,x);
+      */
+      feats_colors_[i].push_back(color);
+    }
     
     /////////////////////////////////////////////////////////////////////////////////////////
   }
