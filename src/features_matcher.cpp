@@ -76,14 +76,17 @@ void FeatureMatcher::extractFeatures()
   }
 }
 
+      
 void FeatureMatcher::exhaustiveMatching()
 {
-  std::vector<cv::DMatch> matches, inlier_matches;
-  
+ 
+  std::vector<cv::DMatch> matches, inlier_matches; //for each couple of images
+
   for( int i = 0; i < images_names_.size() - 1; i++ )
   {
     for( int j = i + 1; j < images_names_.size(); j++ )
     {
+      
       std::cout<<"Matching image "<<i<<" with image "<<j<<std::endl;
 
       //////////////////////////// Code to be completed (2/7) /////////////////////////////////
@@ -100,18 +103,61 @@ void FeatureMatcher::exhaustiveMatching()
       // In case of success, set the matches with the function:
       // setMatches( i, j, inlier_matches);
       /////////////////////////////////////////////////////////////////////////////////////////
-      
-      int threshold = 1;
+    
+      float threshold = 1.0;
       int min_matches = 5;
+    
+      //Creation of the matcher that will be use to compute the matching
+      cv::BFMatcher matcher;
+      matcher.match(descriptors_[i], descriptors_[j], matches);
 
+      //std::cout<<descriptors_[i].size()<<" "<<descriptors_[j].size()<<std::endl;
+      //std::cout<<matches.size()<<std::endl;
+
+      std::vector<cv::Point2f> points_1, points_2;
+
+      for(int k = 0; k < matches.size(); k++ ){
+
+        points_1.push_back(features_[i][matches[k].queryIdx].pt);
+        points_2.push_back(features_[j][matches[k].trainIdx].pt);
       
+      }
       
-      
-      
-      
+      // Perform geometric validation using Essential matrix
+      cv::Mat inlier_mask_E;
+      cv::Mat essential_matrix;
+      essential_matrix = cv::findEssentialMat(points_1, points_2, new_intrinsics_matrix_, cv::RANSAC, 0.999, threshold, inlier_mask_E);
+
+      // Perform geometric validation using Homography matrix
+      cv::Mat inlier_mask_H;
+      cv::Mat homography_matrix;
+      homography_matrix = cv::findHomography(points_1, points_2, cv::RANSAC, threshold, inlier_mask_H);
+
+      //std::cout<<"Inlier mask E "<<inlier_mask_E.rows<<" "<<inlier_mask_E.cols<<std::endl;
+
+      //std::cout << "Inlier mask E:" << std::endl << inlier_mask_E << std::endl;
+
+      for(int k = 0; k < matches.size(); k++){
+
+        if(inlier_mask_E.at<uchar>(k) == 1 && inlier_mask_H.at<uchar>(k) == 1){
+        
+          inlier_matches.push_back(matches[k]);
+          //std::cout<<"Original matches: "<<matches[k]<<" filtered: "<<inlier_matches.size()<<std::endl;
+        
+        }
+      }
+
+
+      // Check if the number of inlier matches is sufficient
+      if(inlier_matches.size() > min_matches ){
+
+        setMatches(i, j, inlier_matches);
+      }
 
       /////////////////////////////////////////////////////////////////////////////////////////
 
+      matches.clear();
+      inlier_matches.clear();
     }
   }
 }
