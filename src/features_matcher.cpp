@@ -3,10 +3,6 @@
 #include <iostream>
 #include <map>
 
-//std::vector<std::string> images_names_;
-//std::vector< std::vector<cv::KeyPoint> > features_;
-//std::vector< std::vector<cv::Vec3b > > feats_colors_;
-//std::vector< cv::Mat > descriptors_;
 
 FeatureMatcher::FeatureMatcher(cv::Mat intrinsics_matrix, cv::Mat dist_coeffs, double focal_scale)
 {
@@ -31,7 +27,7 @@ void FeatureMatcher::extractFeatures()
   descriptors_.resize(images_names_.size());
   feats_colors_.resize(images_names_.size());
 
-  //Used to select the best descriptor: ORB,SURF,SIFT
+  //Used to select the best descriptor: ORB,BRISK,AKAZE
   int feature_detector_type = 0;
   cv::Ptr<cv::ORB> orb_detector = cv::ORB::create(); //0
   cv::Ptr<cv::BRISK> brisk_detector = cv::BRISK::create(); //1
@@ -75,7 +71,7 @@ void FeatureMatcher::extractFeatures()
       */
       feats_colors_[i].push_back(color);
     }
-    
+  
     /////////////////////////////////////////////////////////////////////////////////////////
   }
 }
@@ -104,7 +100,11 @@ void FeatureMatcher::exhaustiveMatching()
       // In case of success, set the matches with the function:
       // setMatches( i, j, inlier_matches);
       /////////////////////////////////////////////////////////////////////////////////////////
+      
+      int threshold = 1;
+      int min_matches = 5;
 
+      
       
       
       
