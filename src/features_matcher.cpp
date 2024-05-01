@@ -32,6 +32,7 @@ void FeatureMatcher::extractFeatures()
   cv::Ptr<cv::ORB> orb_detector = cv::ORB::create(); //0
   cv::Ptr<cv::BRISK> brisk_detector = cv::BRISK::create(); //1
   cv::Ptr<cv::AKAZE> akaze_detector = cv::AKAZE::create(); //2
+  //cv::Ptr<cv::Feature2D> sift = cv::Feature2D::SIFT::create();
 
   for( int i = 0; i < images_names_.size(); i++  )
   {
@@ -101,14 +102,45 @@ void FeatureMatcher::exhaustiveMatching()
       // setMatches( i, j, inlier_matches);
       /////////////////////////////////////////////////////////////////////////////////////////
       
-      int threshold = 1;
+      double threshold = 1.0;
       int min_matches = 5;
+      
+      //Creation of the matcher that will be use to compute the matching
+      cv::Ptr<cv::DescriptorMatcher> matcher = cv::DescriptorMatcher::create(cv::DescriptorMatcher::BRUTEFORCE);
+      matcher->match(descriptors_[i],descriptors_[j],matches);
 
+      //I need points so i have to "convert" from keypoints, key has more (unusefull information now)
+      std::vector<cv::Point2f> points_i,points_j;
+      for(int t=0;t<matches.size();t++)
+      {
+        points_i.push_back(features_[i][matches[t].queryIdx].pt);
+        points_j.push_back(features_[j][matches[t].trainIdx].pt);
+      }
+
+      cv::Mat K = new_intrinsics_matrix_;
+      cv::Mat E_mask;
+      cv::Mat essential_matrix = cv::findEssentialMat(points_i,points_j,K,cv::RANSAC,0.999,1.0,E_mask);
       
       
+      cv::Mat H_mask;
+      cv::Mat homograph_matrix = cv::findHomography(points_i,points_j,cv::RANSAC,3.0,H_mask);
+
+      //test
+      /*
+      std::vector<cv::Point2f> points_1,points_2;
+      cv::KeyPoint::convert(features_[i],points_1);
+      cv::KeyPoint::convert(features_[j],points_2);
+
+      bool res = (points_i == points_1) && (points_j == points_2);
+      if(res)
+        std::cout<<"uguali"<<std::endl;
+      else
+        std::cout<<"diversi"<<std::endl;
       
-      
-      
+      */
+      //Geometric validation
+      //cv::Mat essential_matrix = ;
+      //cv::Mat homograph_matrix = ;
 
       /////////////////////////////////////////////////////////////////////////////////////////
 
