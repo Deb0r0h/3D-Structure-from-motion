@@ -76,7 +76,6 @@ struct ReprojectionError
     return (new ceres::AutoDiffCostFunction<ReprojectionError,2,6,3>(new ReprojectionError(observed_x,observed_y)));
   }
 
-
   /////////////////////////////////////////////////////////////////////////////////////////
 };
 
