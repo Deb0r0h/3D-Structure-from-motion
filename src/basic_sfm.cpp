@@ -23,10 +23,60 @@ struct ReprojectionError
   // pay attention to the order of the template parameters
   //////////////////////////////////////////////////////////////////////////////////////////
   
+  double observed_x;
+  double observed_y;
+
   
-  
-  
-  
+  ReprojectionError(double observed_x, double observed_y) : observed_x(observed_x), observed_y(observed_y) {}
+
+  template<typename T>
+
+    /*
+    FOR THE REPORT:
+    The main steps to compute the reprojection error are:
+    - rotate the point using camera rotation angle
+    - add the transaltion to the rotation
+    - calculate the projected coordinate divide by its z (depth)
+    - calculate the error as the difference between observed and projected coordinates
+    We are ignoring distortion, focal length because we are dealing with normalized canonical camera
+    */
+  bool operator()(const T* const camera, const T* const point, T* residuals) const 
+  {
+    //We want to use AngleAxisRotatePointcamera,point,p)
+    //We know that: 
+    // - camera[0,1,2] -> rotation
+    // - camera[3,4,5] -> traslation
+
+    T p[3];
+    ceres::AngleAxisRotatePoint(camera,point,p);
+    p[0] = p[0] + camera[3];
+    p[1] = p[1] + camera[4];
+    p[2] = p[2] + camera[5];
+
+
+    //Compute projected point, the predicted ones
+    const T predicted_x = p[0]/p[2];
+    const T predicted_y = p[1]/p[2];
+
+    //Residual (error)
+    residuals[0] = predicted_x - T(observed_x);
+    residuals[1] = predicted_y - T(observed_y);
+
+    return true;
+  }
+
+  //Auto-differentiable cost function for the class ReprojectionError
+  //The template parameters are:
+  // - dimension of residul = 2
+  // - dimension of camera = 6
+  // - dimension of p = 3
+  static ceres::CostFunction* Create(const double observed_x, const double observed_y)
+  {
+    //return new ceres::AutoDiffCostFunction<ReprojectionError,2,6,3>(observed_x,observed_y);
+    return (new ceres::AutoDiffCostFunction<ReprojectionError,2,6,3>(new ReprojectionError(observed_x,observed_y)));
+  }
+
+
   /////////////////////////////////////////////////////////////////////////////////////////
 };
 
