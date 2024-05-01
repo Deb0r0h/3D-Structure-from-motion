@@ -570,6 +570,22 @@ bool BasicSfM::incrementalReconstruction( int seed_pair_idx0, int seed_pair_idx1
   // IN case of "good" sideward motion, store the transformation into init_r_mat and  init_t_vec; defined above
   /////////////////////////////////////////////////////////////////////////////////////////
 
+  cv::Mat E = cv::findEssentialMat(points0, points1, intrinsics_matrix, cv::RANSAC, 0.999, 0.001, inlier_mask_E);
+  cv::Mat H = cv::findHomography(points0, points1, cv::RANSAC, 0.001, inlier_mask_H);
+
+  int inliers_E = cv::sum(inlier_mask_E)[0];
+  int inliers_H = cv::sum(inlier_mask_H)[0];
+
+  if(inliers_H > inliers_E){
+    
+    return false;
+  
+  }
+
+  cv::Mat temp_r_mat, temp_r_vec;
+  cv::recoverPose(E, points0, points1, intrinsics_matrix, temp_r_mat, temp_r_vec, inlier_mask_E);
+
+  
   
   
   
