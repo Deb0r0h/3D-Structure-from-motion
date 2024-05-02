@@ -582,15 +582,22 @@ bool BasicSfM::incrementalReconstruction( int seed_pair_idx0, int seed_pair_idx1
   }
 
   cv::Mat temp_r_mat, temp_r_vec;
-  cv::recoverPose(E, points0, points1, intrinsics_matrix, temp_r_mat, temp_r_vec, inlier_mask_E);
+  cv::recoverPose(E, points0, points1, intrinsics_matrix, temp_r_mat, temp_r_vec, inlier_mask_E); 
 
-  
-  
-  
-  
-  
-  
-  
+  double tx = temp_r_vec.at<double>(0, 0);
+  double ty = temp_r_vec.at<double>(1, 0);
+  double tz = temp_r_vec.at<double>(2, 0);
+
+  if(std::abs(tx) > std::abs(tz)){ //if tx is grater than tz then we have a sideward motion so we can store the values
+
+    init_r_mat = temp_r_mat;
+    init_t_vec = temp_r_vec;
+
+  }else{
+
+    return false;
+
+  }
 
   /////////////////////////////////////////////////////////////////////////////////////////
 
