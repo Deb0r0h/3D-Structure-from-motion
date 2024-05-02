@@ -905,10 +905,14 @@ void BasicSfM::bundleAdjustmentIter( int new_cam_idx )
         // while the point position blocks have size (point_block_size_) of 3 elements.
         //////////////////////////////////////////////////////////////////////////////////
 
+
+        //Parameters_.data() returns the pointer to the first element, so to get the values corresponding to camera and 
+        //point (which should be passed to AddResidualBlock()) I have to sum the relative sizes to reach the index corresponding to camera and 
+        //point taking into account the current observation index. The camera in parameters_.data() comes before point.
+        //Analogous reasoning for observations_
         double *camera = parameters_.data() + (cam_pose_index_[i_obs]*camera_block_size_);
-        //TODO check
-        double *point = parameters_.data() + num_cam_poses_ * camera_block_size_ + point_index_[i_obs] + point_block_size_;
-        double *observation = observations_.data() + (i_obs * 2);
+        double *point = parameters_.data() + (num_cam_poses_ * camera_block_size_) + (point_index_[i_obs] * point_block_size_);
+        double *observation = observations_.data() + (2 * i_obs);
 
         ceres::CostFunction *cost_function = ReprojectionError::Create(observation[0],observation[1]);
         problem.AddResidualBlock(cost_function,new::ceres::CauchyLoss(2*max_reproj_err_),camera,point);
