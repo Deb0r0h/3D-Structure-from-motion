@@ -898,11 +898,14 @@ void BasicSfM::bundleAdjustmentIter( int new_cam_idx )
         // while the point position blocks have size (point_block_size_) of 3 elements.
         //////////////////////////////////////////////////////////////////////////////////
 
+        double *camera = parameters_.data() + (cam_pose_index_[i_obs]*camera_block_size_);
+        //TODO check
+        double *point = parameters_.data() + num_cam_poses_ * camera_block_size_ + point_index_[i_obs] + point_block_size_;
+        double *observation = observations_.data() + (i_obs * 2);
 
-        
-        
-        
-        
+        ceres::CostFunction *cost_function = ReprojectionError::Create(observation[0],observation[1]);
+        problem.AddResidualBlock(cost_function,new::ceres::CauchyLoss(2*max_reproj_err_),camera,point);
+
         /////////////////////////////////////////////////////////////////////////////////////////
 
       }
