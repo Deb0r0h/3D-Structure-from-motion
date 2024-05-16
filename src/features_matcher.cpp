@@ -31,7 +31,7 @@ void FeatureMatcher::extractFeatures()
   feats_colors_.resize(images_names_.size());
 
   //Used to select the descriptor: ORB,BRISK,AKAZE,SURF
-  int feature_detector_type = 0;
+  int feature_detector_type = 2;
   
   int max_keypoints = 2000;
   int scale = 2;
