@@ -197,8 +197,6 @@ void FeatureMatcher::exhaustiveMatching()
         setMatches(i, j, inlier_matches);
       }
 
-      std::cout<<"Size of inlier_matches: "<<inlier_matches.size()<<std::endl;
-
       matches.clear();
       inlier_matches.clear();
 
