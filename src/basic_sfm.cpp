@@ -639,7 +639,6 @@ bool BasicSfM::incrementalReconstruction( int seed_pair_idx0, int seed_pair_idx1
     //Check the sideward motion
     if (fabs(traslation.at<double>(0, 0)) < fabs(traslation.at<double>(2, 0))) 
     {
-        std::cout << "Error point 3/7: Sideward motion problem"<<std::endl;
         return false;
     }
 
@@ -848,7 +847,7 @@ bool BasicSfM::incrementalReconstruction( int seed_pair_idx0, int seed_pair_idx1
             //points0.emplace_back(observations_[2*cam_observation_[new_cam_pose_idx][co_iter.first]],observations_[2*cam_observation_[new_cam_pose_idx][co_iter.first] + 1]);
             //points1.emplace_back(observations_[2*co_iter.second],observations_[2*co_iter.second + 1]);
             
-            //Basic style
+            //Get points data from the observations
             points0.emplace_back(observations_[cam_observation_[new_cam_pose_idx][pt_idx] * 2], observations_[cam_observation_[new_cam_pose_idx][pt_idx]*2 +1]);
             points1.emplace_back(observations_[cam_observation_[cam_idx][pt_idx]*2], observations_[cam_observation_[cam_idx][pt_idx] * 2 + 1]);
             
@@ -865,37 +864,6 @@ bool BasicSfM::incrementalReconstruction( int seed_pair_idx0, int seed_pair_idx1
             proj_mat1.at<double>(2,3) = cam1_data[5];
             
             cv::triangulatePoints(proj_mat0, proj_mat1, points0, points1, hpoints4D);
-            
-            
-
-            //another method (same)
-           /*
-            //Index:0,1,2 contains R and 3,4,5 t
-            //Get the value of the rotation and traslation from both the two cameras
-            std::vector<double> rotation_cam0 = {cam0_data[0],cam0_data[1],cam0_data[2]};
-            std::vector<double> rotation_cam1 = {cam1_data[0],cam1_data[1],cam1_data[2]};
-            cv::Mat_<double> traslation_cam0{cam0_data[3],cam0_data[4],cam0_data[5]};
-            cv::Mat_<double> traslation_cam1{cam1_data[3],cam1_data[4],cam1_data[5]};
-
-            cv::Mat_<double>rot_mat0(3,3),rot_mat1(3,3);
-
-            //From axis-angle to matrices form
-            cv::Rodrigues(rotation_cam0,rot_mat0);
-            cv::Rodrigues(rotation_cam1,rot_mat1);
-            
-
-            //Creation of the projection matrix for both the two cameras
-            rot_mat0.copyTo(proj_mat0(cv::Rect(0, 0, 3, 3)));
-            rot_mat1.copyTo(proj_mat1(cv::Rect(0, 0, 3, 3)));
-            
-            traslation_cam0.copyTo(proj_mat0(cv::Rect(3, 0, 1, 3)));
-            traslation_cam1.copyTo(proj_mat1(cv::Rect(3, 0, 1, 3)));
-
-            //Triangulate points 
-            cv::triangulatePoints(proj_mat0, proj_mat1, points0, points1, hpoints4D);
-            */
-
-
 
             //Check the cheirality constaint for pt_idx using the observation of this point in the
             //camera poses with indices new_cam_pose_idx and cam_idx
@@ -970,58 +938,7 @@ bool BasicSfM::incrementalReconstruction( int seed_pair_idx0, int seed_pair_idx1
     // the previous camera and point positions were updated during this iteration.
     /////////////////////////////////////////////////////////////////////////////////////////
 
-    //METHOD 1
-    /*
-    //We detect discrepancies between the data before and after the operations performed by incrementalReconstruction()
-    //We use a specific values as threshold in order to detect the discrepancies
-    //The elements before_reconstruction_parameters and before_reconstruction_sum are created at the beginning of
-    //the function incrementalReconstruction()
-    double sum = 0;
-    double thres = 0.5;
-    int count_points = 0;
-    int count_cam_pos = 0;
-
-    //Counting of points that exceed the chosen threshold
-    for (int n = 6 * num_cam_poses_; n < parameters_.size(); n++) 
-    {
-      if (std::abs(before_reconstruction_parameters[n] - parameters_[n]) > thres) 
-      {
-        count_points++;
-      }
-    }
-
-    //Counting of camera_pos that exceed the chosen threshold
-    for (int n = 0; n < 6 * num_cam_poses_; n++) 
-    {
-      if (std::abs(before_reconstruction_parameters[n] - parameters_[n]) > thres) 
-      {
-        count_cam_pos++;
-      }
-    }
-
-    //To determine whether we have obtained a "bad reconstruction" we check whether the count
-    //of the camera_pos or points exceeding the threshold is greater than half of the 
-    //data considered (poses and points)
-    //The numbers 3 and 6 derive from the dimension of camera (position block = 6) and 
-    //dimension of point (position block = 3)
-    //
-    if (count_cam_pos > 3 * num_cam_poses_ || count_points > (parameters_.size() - (6 * num_cam_poses_)) /2) 
-    {
-      int xyu;
-      //return false;
-    }
-
-    //If all ok (no "bad reconstruction") we make the before_reconstruction values equals to the current ones
-    before_reconstruction_sum = sum;
-    before_reconstruction_parameters.clear();
-    for (int i = 0; i < parameters_.size(); i++) 
-    {
-      before_reconstruction_parameters.push_back(parameters_[i]);
-    }
-    */
-
-
-    //METHOD 2
+    
     //We compute the diagonal of the bounding box before and after
     //in order to detect drastically changes
     //Calculating the diagonal of the bounding box can provide 

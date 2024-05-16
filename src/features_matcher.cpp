@@ -31,7 +31,7 @@ void FeatureMatcher::extractFeatures()
   feats_colors_.resize(images_names_.size());
 
   //Used to select the descriptor: ORB,BRISK,AKAZE,SURF
-  int feature_detector_type = 2;
+  int feature_detector_type = 0;
   
   int max_keypoints = 2000;
   int scale = 2;
@@ -49,7 +49,7 @@ void FeatureMatcher::extractFeatures()
   //akaze_detector->setNOctaves(8);
   //akaze_detector->setNOctaveLayers(6);
 
-  int hessian = 10;
+  int hessian = 20;
   //cv::Ptr<cv::xfeatures2d::SURF> surf_detector= cv::xfeatures2d::SURF::create(hessian); //3
 
   for( int i = 0; i < images_names_.size(); i++  )
@@ -129,10 +129,10 @@ void FeatureMatcher::exhaustiveMatching()
       float threshold = 1.0f;
       int min_matches = 5;
 
-      //We need to use NORM_HAMMING for both ORB, BRISK and AKAZE, but is better NORM_L2 for SURF (other commented matcher)
+      //We need to use NORM_HAMMING for both ORB, BRISK, but is better NORM_L2 for SURF (other commented matcher)
       cv::Ptr<cv::BFMatcher> matcher = cv::BFMatcher::create(cv::NORM_HAMMING, true);
       
-      //SURF
+      //SURF (remembre: comment line 133 and change values in point 1/7 to use it)
       //cv::Ptr<cv::BFMatcher> matcher = cv::BFMatcher::create(cv::NORM_L2,false);
 
       matcher->match(descriptors_[i], descriptors_[j], matches);
@@ -145,9 +145,10 @@ void FeatureMatcher::exhaustiveMatching()
         points_2.push_back(features_[j][matches[k].trainIdx].pt);
       }
 
-      //Only for AKAZE we use knn, decomment here and comment lines 138-146
+      //Only for AKAZE we use knn, decomment here and comment lines 133-146
       //if you want to use akaze
       /*
+      cv::BFMatcher matcher(cv::NORM_HAMMING);
       std::vector<std::vector<cv::DMatch>> knn_matches;
       matcher.knnMatch(descriptors_[i], descriptors_[j], knn_matches, 2);
       const float ratio_threshold = 0.8f;
