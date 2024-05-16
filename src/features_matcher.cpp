@@ -31,16 +31,25 @@ void FeatureMatcher::extractFeatures()
   feats_colors_.resize(images_names_.size());
 
   //Used to select the descriptor: ORB,BRISK,AKAZE,SURF
-  int feature_detector_type = 2;
+  int feature_detector_type = 0;
   
+  int max_keypoints = 2000;
+  int scale = 2;
+  cv::Ptr<cv::ORB> orb_detector = cv::ORB::create(max_keypoints, scale); //0
+
+  int thresh_brisk = 30;
+  int octaves_brisk = 3;
+  cv::Ptr<cv::BRISK> brisk_detector = cv::BRISK::create(thresh_brisk, octaves_brisk); //1
+  
+  float thresh_akaze = 0.0001f;
+  int octaves_akaze = 8;
+  int octaves_layers = 6;
+  cv::Ptr<cv::AKAZE> akaze_detector = cv::AKAZE::create(cv::AKAZE::DESCRIPTOR_MLDB, 0, 3, thresh_akaze, octaves_akaze, octaves_layers); //2
+  //akaze_detector->setThreshold(0.0001);
+  //akaze_detector->setNOctaves(8);
+  //akaze_detector->setNOctaveLayers(6);
+
   int hessian = 10;
-  int minKey = 12000;
-  cv::Ptr<cv::ORB> orb_detector = cv::ORB::create(minKey); //0
-  cv::Ptr<cv::BRISK> brisk_detector = cv::BRISK::create(); //1
-  cv::Ptr<cv::AKAZE> akaze_detector = cv::AKAZE::create(); //2
-  akaze_detector->setThreshold(0.0001);
-  akaze_detector->setNOctaves(8);
-  akaze_detector->setNOctaveLayers(6);
   //cv::Ptr<cv::xfeatures2d::SURF> surf_detector= cv::xfeatures2d::SURF::create(hessian); //3
 
   for( int i = 0; i < images_names_.size(); i++  )
@@ -55,9 +64,9 @@ void FeatureMatcher::extractFeatures()
     // it into feats_colors_[i] vector
     /////////////////////////////////////////////////////////////////////////////////////////
     
-    //Convert to grey image, better results (and fast)
+    //Convert to grey image, better and faster results 
     cv::Mat grey;
-    cv::cvtColor(img,grey,cv::COLOR_BGR2GRAY);
+    cv::cvtColor(img, grey, cv::COLOR_BGR2GRAY);
 
     switch(feature_detector_type){
 
@@ -117,93 +126,60 @@ void FeatureMatcher::exhaustiveMatching()
       // setMatches( i, j, inlier_matches);
       /////////////////////////////////////////////////////////////////////////////////////////
 
-
+      float threshold = 1.0f;
       int min_matches = 5;
 
-      //Create two different approach for the matcher
-      //The first for AKAZE and the second for SURF, ORB
-      //To use one of them comment the other one
+      //We need to use NORM_HAMMING for both ORB, BRISK and AKAZE, but is better NORM_L2 for SURF (other commented matcher)
+      cv::Ptr<cv::BFMatcher> matcher = cv::BFMatcher::create(cv::NORM_HAMMING, true);
       
-      //AKAZE
-      
-      std::vector<std::vector<cv::DMatch>> knn_matches;
-      cv::BFMatcher matcher(cv::NORM_HAMMING);
-      matcher.knnMatch(descriptors_[i], descriptors_[j], knn_matches, 2);
+      //cv::Ptr<cv::BFMatcher> matcher = cv::BFMatcher::create(cv::NORM_L2,false);
 
-      const float ratio_threshold = 0.8f;
-      std::vector<cv::Point2f> points_i, points_j;
-      for (const auto &m: knn_matches) 
-      {
-          if (m[0].distance < ratio_threshold * m[1].distance) 
-          { 
-            matches.push_back(m[0]);
-            points_i.push_back(features_[i][m[0].queryIdx].pt);
-            points_j.push_back(features_[j][m[0].trainIdx].pt);
-          }
-      }
-      
-      
-      
-
-      //SURF & ORB
-      /*
-      cv::Ptr<cv::BFMatcher> matcher = cv::BFMatcher::create(cv::NORM_L2,false);
       matcher->match(descriptors_[i], descriptors_[j], matches);
 
-      std::vector<cv::Point2f> points_i, points_j;
-      for(int k = 0; k < matches.size(); k++ )
-      {
-        points_i.push_back(features_[i][matches[k].queryIdx].pt);
-        points_j.push_back(features_[j][matches[k].trainIdx].pt);
+      std::vector<cv::Point2f> points_1, points_2;
+
+      for(int k = 0; k < matches.size(); k++ ){
+
+        points_1.push_back(features_[i][matches[k].queryIdx].pt);
+        points_2.push_back(features_[j][matches[k].trainIdx].pt);
+      
       }
-      */
       
       
-      //Compute the essential matrix and the homography matrix
-      cv::Mat mask_essential, mask_homography;
-      cv::findEssentialMat(points_i, points_j, new_intrinsics_matrix_, cv::RANSAC, 0.999, 1.0,mask_essential);
-      cv::findHomography(points_i, points_j,mask_homography, cv::RANSAC, 1.0);
+      // Perform geometric validation using Essential matrix
+      cv::Mat inlier_mask_E;
+      cv::Mat essential_matrix;
+      essential_matrix = cv::findEssentialMat(points_1, points_2, new_intrinsics_matrix_, cv::RANSAC, 0.999, threshold, inlier_mask_E);
 
+      // Perform geometric validation using Homography matrix
+      cv::Mat inlier_mask_H;
+      cv::Mat homography_matrix;
+      homography_matrix = cv::findHomography(points_1, points_2, cv::RANSAC, threshold, inlier_mask_H);
 
-      std::vector<cv::DMatch> inlier_matches_H,inlier_matches_E;
+      int e = cv::sum(inlier_mask_E)[0];
+      int h = cv::sum(inlier_mask_H)[0];
 
-      //We perform the geometric validation and select the model that gives us 
-      //the highest number of inliers
-      for(int k=0;k<matches.size();k++)
-      {
-        if(mask_homography.at<uchar>(k,0)==1)
-        {
-          inlier_matches_H.push_back(matches[k]);
+      for(int k = 0; k < matches.size(); k++){
+        
+        if(e > h && inlier_mask_E.at<uchar>(k,0) == 1){
+        
+          inlier_matches.push_back(matches[k]);
         }
-        if(mask_essential.at<uchar>(k,0)==1)
-        {
-          inlier_matches_E.push_back(matches[k]);
+
+        if(h > e && inlier_mask_H.at<uchar>(k,0) == 1){
+
+          inlier_matches.push_back(matches[k]);
         }
+        
       }
 
-      int H = inlier_matches_H.size();
-      int E = inlier_matches_E.size();
+      // Check if the number of inlier matches is sufficient
+      if(inlier_matches.size() > min_matches ){
 
-      if(H > E)
-      {
-        for (int t = 0; t < inlier_matches_H.size(); t++)
-        {
-          inlier_matches.push_back(inlier_matches_H[t]);
-        }
-      }
-      else 
-      {
-        for (int t = 0; t < inlier_matches_E.size(); t++)
-        {
-          inlier_matches.push_back(inlier_matches_E[t]);
-        }
-      }
-
-      //Set the matches after checking the minimum size = 5
-      if (inlier_matches.size() > min_matches)
-      {
         setMatches(i, j, inlier_matches);
       }
+
+      std::cout<<"Size of inlier_matches: "<<inlier_matches.size()<<std::endl;
 
       matches.clear();
       inlier_matches.clear();
