@@ -9,7 +9,41 @@
 #include <ceres/ceres.h>
 #include <ceres/rotation.h>
 
+#include <cmath>
+#include <limits>
+
 using namespace std;
+
+
+//Function used to compute the diagonal of the bounding box
+//used in point 7/7 and after the first bundle adjustment in order to get the
+//value of the diagonal before and after
+double computeDiagonal(std::vector<double> params, int numCamPos)
+{
+    cv::Point3d max_point = {std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest()};
+    cv::Point3d min_point = {std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max()};
+  
+    //the increment is 3 because of how the values are divided within parameters, in blocks of three
+    for(int i = 6 * numCamPos; i < params.size(); i+=3) 
+    {
+      cv::Point3d temp_point = {params[i],params[i+1],params[i+2]};
+      
+      //check if all the value are finite, otherwise we don't save them
+      if(std::isfinite(temp_point.x) && std::isfinite(temp_point.y) && std::isfinite(temp_point.z))
+      {
+        if(temp_point.x <= min_point.x && temp_point.y <= min_point.y && temp_point.z <= min_point.z)
+          min_point = temp_point;
+        
+        if(temp_point.x >= max_point.x && temp_point.y >= max_point.y && temp_point.z >= max_point.z)
+          max_point = temp_point;
+      }
+    }
+
+    //Compute the diagonal of the Bounding box
+    double diagonal = sqrt(pow(max_point.x-min_point.x,2) + pow(max_point.y-min_point.y,2) + pow(max_point.z-min_point.z,2));
+    return diagonal;
+}
+
 
 struct ReprojectionError
 {
@@ -532,16 +566,18 @@ bool BasicSfM::incrementalReconstruction( int seed_pair_idx0, int seed_pair_idx1
 {
 
 //////////////////////////////////////////////////
-  //Used in point 7/7:
+  //Used in point 7/7 METHOD 1:
   //We save the parameters before runnnig all the process for the incremental reconstruction
   //so we can compare them later with the "newly" obtained data
-  
   double before_reconstruction_sum = 0;
   vector<double> before_reconstruction_parameters;
   for (int i = 0; i < parameters_.size(); i++) 
   {
     before_reconstruction_parameters.push_back(parameters_[i]);
   }
+
+  //Used in point 7/7 METHOD 2
+  std::vector<double> previous_param;
 //////////////////////////////////////////////////
 
 
@@ -585,35 +621,30 @@ bool BasicSfM::incrementalReconstruction( int seed_pair_idx0, int seed_pair_idx1
   // IN case of "good" sideward motion, store the transformation into init_r_mat and  init_t_vec; defined above
   /////////////////////////////////////////////////////////////////////////////////////////
 
-  cv::Mat E = cv::findEssentialMat(points0, points1, intrinsics_matrix, cv::RANSAC, 0.999, 0.001, inlier_mask_E);
-  cv::Mat H = cv::findHomography(points0, points1, cv::RANSAC, 0.001, inlier_mask_H);
+    //Compute the essential matrix and homography matrix to perform geometric validation
+    double threshold = 0.001;
+    cv::Mat E = findEssentialMat(points0, points1, intrinsics_matrix, cv::RANSAC, 0.999, threshold, inlier_mask_E);
+    cv::Mat H = findHomography(points0, points1, cv::RANSAC, threshold, inlier_mask_H);
 
-  int inliers_E = cv::sum(inlier_mask_E)[0];
-  int inliers_H = cv::sum(inlier_mask_H)[0];
+    //The number of inlier must be grater in E
+    if (countNonZero(inlier_mask_H) >= countNonZero(inlier_mask_E)) 
+    {
+      return false;
+    }
 
-  if(inliers_H > inliers_E){
-    
-    return false;
-  
-  }
+    //Recover the pose, rigid body transformation
+    cv::Mat rotation, traslation;
+    recoverPose(E, points0, points1, intrinsics_matrix, rotation, traslation, inlier_mask_E);
 
-  cv::Mat temp_r_mat, temp_r_vec;
-  cv::recoverPose(E, points0, points1, intrinsics_matrix, temp_r_mat, temp_r_vec, inlier_mask_E); 
+    //Check the sideward motion
+    if (fabs(traslation.at<double>(0, 0)) < fabs(traslation.at<double>(2, 0))) 
+    {
+        std::cout << "Error point 3/7: Sideward motion problem"<<std::endl;
+        return false;
+    }
 
-  double tx = temp_r_vec.at<double>(0, 0);
-  double ty = temp_r_vec.at<double>(1, 0);
-  double tz = temp_r_vec.at<double>(2, 0);
-
-  if(std::abs(tx) > std::abs(tz)){ //if tx is grater than tz then we have a sideward motion so we can store the values
-
-    init_r_mat = temp_r_mat;
-    init_t_vec = temp_r_vec;
-
-  }else{
-
-    return false;
-
-  }
+    rotation.copyTo(init_r_mat);
+    traslation.copyTo(init_t_vec);
 
   /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -699,6 +730,18 @@ bool BasicSfM::incrementalReconstruction( int seed_pair_idx0, int seed_pair_idx1
   // Start to register new poses and observations...
   for(int iter = 1; iter < num_cam_poses_ - 1; iter++ )
   {
+    //Code for point 7/7
+    /////////////////////////////
+    previous_param.clear();
+    for(int i = 0; i< parameters_.size();i++)
+    {
+      previous_param.push_back(parameters_[i]);
+    }
+
+    double diagonal_before_rec = computeDiagonal(previous_param,num_cam_poses_);
+    ////////////////////////////
+
+
     // The vector n_init_pts stores the number of points already being optimized
     // that are projected in a new camera pose when is optimized for the first time
     std::vector<int> n_init_pts(num_cam_poses_, 0);
@@ -800,21 +843,15 @@ bool BasicSfM::incrementalReconstruction( int seed_pair_idx0, int seed_pair_idx1
             // pt[2] = /*X coordinate of the estimated point */;
             /////////////////////////////////////////////////////////////////////////////////////////
 
-            //Get the observation of the point at index: new_cam_pose_idx and cam_idx
-            points0.emplace_back(observations_[cam_observation_[new_cam_pose_idx][pt_idx]*2], 
-                                 observations_[cam_observation_[new_cam_pose_idx][pt_idx]*2 +1]);
-            points1.emplace_back(observations_[cam_observation_[cam_idx][pt_idx]*2], 
-                                 observations_[cam_observation_[cam_idx][pt_idx]*2 +1]);
-
-            //altro metodo (simile al tutor)
-            /*
-            points0.emplace_back(observations_[2*cam_observation_[new_cam_pose_idx][co_iter.first]], 
-                                 observations_[2*cam_observation_[new_cam_pose_idx][co_iter.first]+1]);
-            points1.emplace_back(observations_[2*co_iter.second],
-                                 observations_[2*co_iter.second +1]);
-            */
-          
-
+            //Get the observation of the point at index: new_cam_pose_idx and cam_idx 
+            //TUTOR Style
+            //points0.emplace_back(observations_[2*cam_observation_[new_cam_pose_idx][co_iter.first]],observations_[2*cam_observation_[new_cam_pose_idx][co_iter.first] + 1]);
+            //points1.emplace_back(observations_[2*co_iter.second],observations_[2*co_iter.second + 1]);
+            
+            //Basic style
+            points0.emplace_back(observations_[cam_observation_[new_cam_pose_idx][pt_idx] * 2], observations_[cam_observation_[new_cam_pose_idx][pt_idx]*2 +1]);
+            points1.emplace_back(observations_[cam_observation_[cam_idx][pt_idx]*2], observations_[cam_observation_[cam_idx][pt_idx] * 2 + 1]);
+            
             //Index:0,1,2 contains R and 3,4,5 t
             //We use Rodrigues to convert from axis angle to matrix form for both camera 0-1
             cv::Rodrigues(cv::Vec3d(cam0_data[0],cam0_data[1],cam0_data[2]),proj_mat0(cv::Rect(0,0,3,3)));
@@ -828,55 +865,53 @@ bool BasicSfM::incrementalReconstruction( int seed_pair_idx0, int seed_pair_idx1
             proj_mat1.at<double>(2,3) = cam1_data[5];
             
             cv::triangulatePoints(proj_mat0, proj_mat1, points0, points1, hpoints4D);
+            
+            
 
-
-
-            // ALTRO MODO:
-
-          /*
-
-            //Rotation matrix and vector with traslation for both camera 0-1
-            cv::Mat_<double> rot0(3,3), rot1(3,3);
+            //another method (same)
+           /*
+            //Index:0,1,2 contains R and 3,4,5 t
+            //Get the value of the rotation and traslation from both the two cameras
+            std::vector<double> rotation_cam0 = {cam0_data[0],cam0_data[1],cam0_data[2]};
+            std::vector<double> rotation_cam1 = {cam1_data[0],cam1_data[1],cam1_data[2]};
             cv::Mat_<double> traslation_cam0{cam0_data[3],cam0_data[4],cam0_data[5]};
             cv::Mat_<double> traslation_cam1{cam1_data[3],cam1_data[4],cam1_data[5]};
 
-            //Conversion from axis angle to matrix form
-            cv::Rodrigues(cv::Vec3d(cam0_data[0],cam0_data[1],cam0_data[2]), rot0);
-            cv::Rodrigues(cv::Vec3d(cam1_data[0],cam1_data[1],cam1_data[2]), rot1);
+            cv::Mat_<double>rot_mat0(3,3),rot_mat1(3,3);
 
-
-            //Fill the two 0-1 "camera pose"
-            rot0.copyTo(proj_mat0(cv::Rect(0,0,3,3)));
-            rot1.copyTo(proj_mat1(cv::Rect(0,0,3,3)));
+            //From axis-angle to matrices form
+            cv::Rodrigues(rotation_cam0,rot_mat0);
+            cv::Rodrigues(rotation_cam1,rot_mat1);
             
-            traslation_cam0.copyTo(proj_mat0(cv::Rect(3,0,1,3)));
-            traslation_cam1.copyTo(proj_mat1(cv::Rect(3,0,1,3)));
 
+            //Creation of the projection matrix for both the two cameras
+            rot_mat0.copyTo(proj_mat0(cv::Rect(0, 0, 3, 3)));
+            rot_mat1.copyTo(proj_mat1(cv::Rect(0, 0, 3, 3)));
+            
+            traslation_cam0.copyTo(proj_mat0(cv::Rect(3, 0, 1, 3)));
+            traslation_cam1.copyTo(proj_mat1(cv::Rect(3, 0, 1, 3)));
+
+            //Triangulate points 
             cv::triangulatePoints(proj_mat0, proj_mat1, points0, points1, hpoints4D);
-
             */
 
 
 
-           //This vectors are created at each call of incrementalReconstruction()
-           //so clear() is redundant (?)
-           // points0.clear();
-           // points1.clear();
-            
-            
-            // Check the cheirality constaint for pt_idx using the observation of this point in the
-            // camera poses with indices new_cam_pose_idx and cam_idx
-            if(checkCheiralityConstraint(new_cam_pose_idx,pt_idx) && checkCheiralityConstraint(cam_idx,pt_idx))
-            {
+            //Check the cheirality constaint for pt_idx using the observation of this point in the
+            //camera poses with indices new_cam_pose_idx and cam_idx
+            int rr = 0;  
+            if(checkCheiralityConstraint(cam_idx,pt_idx) && checkCheiralityConstraint(new_cam_pose_idx,pt_idx)){
               n_new_pts++;
               pts_optim_iter_[pt_idx] = 1;
               double *pt = pointBlockPtr(pt_idx);
-
-              //Conversion from homogeneous coordinates
-              pt[0] = hpoints4D.at<double>(0,0)/hpoints4D.at<double>(3,0);
-              pt[1] = hpoints4D.at<double>(1,0)/hpoints4D.at<double>(3,0);
-              pt[2] = hpoints4D.at<double>(2,0)/hpoints4D.at<double>(3,0); 
-            }    
+              pt[0] = hpoints4D.at<double>(0,rr)/hpoints4D.at<double>(3,rr);
+              pt[1] = hpoints4D.at<double>(1,rr)/hpoints4D.at<double>(3,rr);
+              pt[2] = hpoints4D.at<double>(2,rr)/hpoints4D.at<double>(3,rr);
+            }
+           
+            //Redundant, for security
+            points0.clear();
+            points1.clear();
  
             /////////////////////////////////////////////////////////////////////////////////////////
 
@@ -935,11 +970,8 @@ bool BasicSfM::incrementalReconstruction( int seed_pair_idx0, int seed_pair_idx1
     // the previous camera and point positions were updated during this iteration.
     /////////////////////////////////////////////////////////////////////////////////////////
 
-    // ....
-    //  if( <bad reconstruction> )
-    //    return false;
-
-
+    //METHOD 1
+    /*
     //We detect discrepancies between the data before and after the operations performed by incrementalReconstruction()
     //We use a specific values as threshold in order to detect the discrepancies
     //The elements before_reconstruction_parameters and before_reconstruction_sum are created at the beginning of
@@ -975,7 +1007,8 @@ bool BasicSfM::incrementalReconstruction( int seed_pair_idx0, int seed_pair_idx1
     //
     if (count_cam_pos > 3 * num_cam_poses_ || count_points > (parameters_.size() - (6 * num_cam_poses_)) /2) 
     {
-      return false;
+      int xyu;
+      //return false;
     }
 
     //If all ok (no "bad reconstruction") we make the before_reconstruction values equals to the current ones
@@ -985,7 +1018,32 @@ bool BasicSfM::incrementalReconstruction( int seed_pair_idx0, int seed_pair_idx1
     {
       before_reconstruction_parameters.push_back(parameters_[i]);
     }
+    */
 
+
+    //METHOD 2
+    //We compute the diagonal of the bounding box before and after
+    //in order to detect drastically changes
+    //Calculating the diagonal of the bounding box can provide 
+    //a rough measure of the overall size of the space occupied by objects in 
+    //the scene. If image registration is done correctly, the difference between 
+    //the diagonals before and after registration should be minimal
+
+    //Compute the current diagonal
+    double diagonal_after_rec = computeDiagonal(parameters_, num_cam_poses_);
+    //Too high
+    if(diagonal_after_rec == std::numeric_limits<double>::max() || diagonal_before_rec == std::numeric_limits<double>::max())
+    {
+      return false;
+    }
+
+    //Condition that give us if the reconstruction is good or not.
+    //We consider half of the diagonal (before the reconstruction) as threshold
+    if((diagonal_after_rec - diagonal_before_rec) > (0.5 * diagonal_before_rec))
+    {
+      std::cout<<"Bad reconstruction, diverge"<<std::endl;
+      return false;
+    }
     /////////////////////////////////////////////////////////////////////////////////////////
   }
 
@@ -1042,7 +1100,7 @@ void BasicSfM::bundleAdjustmentIter( int new_cam_idx )
         //////////////////////////////////////////////////////////////////////////////////
 
         //Parameters_.data() returns the pointer to the first element, so to get the values corresponding to camera and 
-        //point (which should be passed to AddResidualBlock()) I have to sum the relative sizes to reach the index corresponding to camera and 
+        //point (which should be passed to AddResidualBlock()) we have to sum the relative sizes to reach the index corresponding to camera and 
         //point taking into account the current observation index. The camera in parameters_.data() comes before point.
         //Analogous reasoning for observations_
         double *camera = parameters_.data() + (cam_pose_index_[i_obs]*camera_block_size_);

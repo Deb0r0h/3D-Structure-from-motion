@@ -3,6 +3,9 @@
 #include <iostream>
 #include <map>
 
+//#include "opencv2/xfeatures2d.hpp"
+//#include "opencv2/xfeatures2d/nonfree.hpp"
+
 
 FeatureMatcher::FeatureMatcher(cv::Mat intrinsics_matrix, cv::Mat dist_coeffs, double focal_scale)
 {
@@ -27,12 +30,18 @@ void FeatureMatcher::extractFeatures()
   descriptors_.resize(images_names_.size());
   feats_colors_.resize(images_names_.size());
 
-  //Used to select the best descriptor: ORB,BRISK,AKAZE
-  int feature_detector_type = 0;
-  cv::Ptr<cv::ORB> orb_detector = cv::ORB::create(); //0
+  //Used to select the descriptor: ORB,BRISK,AKAZE,SURF
+  int feature_detector_type = 2;
+  
+  int hessian = 10;
+  int minKey = 12000;
+  cv::Ptr<cv::ORB> orb_detector = cv::ORB::create(minKey); //0
   cv::Ptr<cv::BRISK> brisk_detector = cv::BRISK::create(); //1
   cv::Ptr<cv::AKAZE> akaze_detector = cv::AKAZE::create(); //2
-  //cv::Ptr<cv::Feature2D> sift = cv::Feature2D::SIFT::create();
+  akaze_detector->setThreshold(0.0001);
+  akaze_detector->setNOctaves(8);
+  akaze_detector->setNOctaveLayers(6);
+  //cv::Ptr<cv::xfeatures2d::SURF> surf_detector= cv::xfeatures2d::SURF::create(hessian); //3
 
   for( int i = 0; i < images_names_.size(); i++  )
   {
@@ -46,33 +55,36 @@ void FeatureMatcher::extractFeatures()
     // it into feats_colors_[i] vector
     /////////////////////////////////////////////////////////////////////////////////////////
     
-    switch (feature_detector_type)
-    {
+    //Convert to grey image, better results (and fast)
+    cv::Mat grey;
+    cv::cvtColor(img,grey,cv::COLOR_BGR2GRAY);
+
+    switch(feature_detector_type){
+
       case 0:
-        orb_detector->detectAndCompute(img,cv::Mat(),features_[i],descriptors_[i]);
+        orb_detector->detectAndCompute(grey, cv::noArray(), features_[i], descriptors_[i]);
         break;
       
       case 1:
-        brisk_detector->detectAndCompute(img,cv::Mat(),features_[i],descriptors_[i]);
+        brisk_detector->detectAndCompute(grey, cv::noArray(), features_[i], descriptors_[i]);
         break;
       
       case 2:
-        akaze_detector->detectAndCompute(img,cv::Mat(),features_[i],descriptors_[i]);
+        akaze_detector->detectAndCompute(grey, cv::noArray(), features_[i], descriptors_[i]);
         break;
+
+     // case 3:
+       // surf_detector->detectAndCompute(grey, cv::noArray(), features_[i], descriptors_[i]);
+        //break;
+    
     }
     
-    for(int j=0;j<features_[i].size();j++)
-    {
-      cv::Vec3b color = img.at<cv::Vec3b>(features_[i][j].pt);
+    for(int j = 0; j < features_[i].size(); j++){
 
-      /*Maybe
-      int x = features_[i][j].pt.x;
-      int y = features_[i][j].pt.y;
-      cv::Vec3b color = img.at<cv::Vec3b>(y,x);
-      */
+      cv::Vec3b color = img.at<cv::Vec3b>(features_[i][j].pt);
       feats_colors_[i].push_back(color);
     }
-  
+
     /////////////////////////////////////////////////////////////////////////////////////////
   }
 }
@@ -104,61 +116,99 @@ void FeatureMatcher::exhaustiveMatching()
       // In case of success, set the matches with the function:
       // setMatches( i, j, inlier_matches);
       /////////////////////////////////////////////////////////////////////////////////////////
-    
-      float threshold = 1.0;
+
+
       int min_matches = 5;
-    
-      //Creation of the matcher that will be use to compute the matching
-      cv::BFMatcher matcher;
-      matcher.match(descriptors_[i], descriptors_[j], matches);
 
-      //std::cout<<descriptors_[i].size()<<" "<<descriptors_[j].size()<<std::endl;
-      //std::cout<<matches.size()<<std::endl;
-
-      std::vector<cv::Point2f> points_1, points_2;
-
-      for(int k = 0; k < matches.size(); k++ ){
-
-        points_1.push_back(features_[i][matches[k].queryIdx].pt);
-        points_2.push_back(features_[j][matches[k].trainIdx].pt);
+      //Create two different approach for the matcher
+      //The first for AKAZE and the second for SURF, ORB
+      //To use one of them comment the other one
       
+      //AKAZE
+      
+      std::vector<std::vector<cv::DMatch>> knn_matches;
+      cv::BFMatcher matcher(cv::NORM_HAMMING);
+      matcher.knnMatch(descriptors_[i], descriptors_[j], knn_matches, 2);
+
+      const float ratio_threshold = 0.8f;
+      std::vector<cv::Point2f> points_i, points_j;
+      for (const auto &m: knn_matches) 
+      {
+          if (m[0].distance < ratio_threshold * m[1].distance) 
+          { 
+            matches.push_back(m[0]);
+            points_i.push_back(features_[i][m[0].queryIdx].pt);
+            points_j.push_back(features_[j][m[0].trainIdx].pt);
+          }
       }
       
-      // Perform geometric validation using Essential matrix
-      cv::Mat inlier_mask_E;
-      cv::Mat essential_matrix;
-      essential_matrix = cv::findEssentialMat(points_1, points_2, new_intrinsics_matrix_, cv::RANSAC, 0.999, threshold, inlier_mask_E);
+      
+      
 
-      // Perform geometric validation using Homography matrix
-      cv::Mat inlier_mask_H;
-      cv::Mat homography_matrix;
-      homography_matrix = cv::findHomography(points_1, points_2, cv::RANSAC, threshold, inlier_mask_H);
+      //SURF & ORB
+      /*
+      cv::Ptr<cv::BFMatcher> matcher = cv::BFMatcher::create(cv::NORM_L2,false);
+      matcher->match(descriptors_[i], descriptors_[j], matches);
 
-      //std::cout<<"Inlier mask E "<<inlier_mask_E.rows<<" "<<inlier_mask_E.cols<<std::endl;
+      std::vector<cv::Point2f> points_i, points_j;
+      for(int k = 0; k < matches.size(); k++ )
+      {
+        points_i.push_back(features_[i][matches[k].queryIdx].pt);
+        points_j.push_back(features_[j][matches[k].trainIdx].pt);
+      }
+      */
+      
+      
+      //Compute the essential matrix and the homography matrix
+      cv::Mat mask_essential, mask_homography;
+      cv::findEssentialMat(points_i, points_j, new_intrinsics_matrix_, cv::RANSAC, 0.999, 1.0,mask_essential);
+      cv::findHomography(points_i, points_j,mask_homography, cv::RANSAC, 1.0);
 
-      //std::cout << "Inlier mask E:" << std::endl << inlier_mask_E << std::endl;
 
-      for(int k = 0; k < matches.size(); k++){
+      std::vector<cv::DMatch> inlier_matches_H,inlier_matches_E;
 
-        if(inlier_mask_E.at<uchar>(k) == 1 && inlier_mask_H.at<uchar>(k) == 1){
-        
-          inlier_matches.push_back(matches[k]);
-          //std::cout<<"Original matches: "<<matches[k]<<" filtered: "<<inlier_matches.size()<<std::endl;
-        
+      //We perform the geometric validation and select the model that gives us 
+      //the highest number of inliers
+      for(int k=0;k<matches.size();k++)
+      {
+        if(mask_homography.at<uchar>(k,0)==1)
+        {
+          inlier_matches_H.push_back(matches[k]);
+        }
+        if(mask_essential.at<uchar>(k,0)==1)
+        {
+          inlier_matches_E.push_back(matches[k]);
         }
       }
 
+      int H = inlier_matches_H.size();
+      int E = inlier_matches_E.size();
 
-      // Check if the number of inlier matches is sufficient
-      if(inlier_matches.size() > min_matches ){
+      if(H > E)
+      {
+        for (int t = 0; t < inlier_matches_H.size(); t++)
+        {
+          inlier_matches.push_back(inlier_matches_H[t]);
+        }
+      }
+      else 
+      {
+        for (int t = 0; t < inlier_matches_E.size(); t++)
+        {
+          inlier_matches.push_back(inlier_matches_E[t]);
+        }
+      }
 
+      //Set the matches after checking the minimum size = 5
+      if (inlier_matches.size() > min_matches)
+      {
         setMatches(i, j, inlier_matches);
       }
 
-      /////////////////////////////////////////////////////////////////////////////////////////
-
       matches.clear();
       inlier_matches.clear();
+
+      /////////////////////////////////////////////////////////////////////////////////////////
     }
   }
 }
