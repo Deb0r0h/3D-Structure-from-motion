@@ -132,18 +132,36 @@ void FeatureMatcher::exhaustiveMatching()
       //We need to use NORM_HAMMING for both ORB, BRISK and AKAZE, but is better NORM_L2 for SURF (other commented matcher)
       cv::Ptr<cv::BFMatcher> matcher = cv::BFMatcher::create(cv::NORM_HAMMING, true);
       
+      //SURF
       //cv::Ptr<cv::BFMatcher> matcher = cv::BFMatcher::create(cv::NORM_L2,false);
 
       matcher->match(descriptors_[i], descriptors_[j], matches);
 
       std::vector<cv::Point2f> points_1, points_2;
 
-      for(int k = 0; k < matches.size(); k++ ){
-
+      for(int k = 0; k < matches.size(); k++ )
+      {
         points_1.push_back(features_[i][matches[k].queryIdx].pt);
         points_2.push_back(features_[j][matches[k].trainIdx].pt);
-      
       }
+
+      //Only for AKAZE we use knn, decomment here and comment lines 138-146
+      //if you want to use akaze
+      /*
+      std::vector<std::vector<cv::DMatch>> knn_matches;
+      matcher.knnMatch(descriptors_[i], descriptors_[j], knn_matches, 2);
+      const float ratio_threshold = 0.8f;
+      std::vector<cv::Point2f> points_1, points_2;
+      for (const auto &m: knn_matches) 
+      {
+          if (m[0].distance < ratio_threshold * m[1].distance) 
+          { 
+            matches.push_back(m[0]);
+            points_1.push_back(features_[i][m[0].queryIdx].pt);
+            points_2.push_back(features_[j][m[0].trainIdx].pt);
+          }
+      }
+      */
       
       
       // Perform geometric validation using Essential matrix
