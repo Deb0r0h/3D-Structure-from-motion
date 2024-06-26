@@ -1,3 +1,18 @@
+# Structure from motion
+
+<p align="center">
+  <img src="media_readme/aloe.jpg" width="45%" />
+  <img src="media_readme/cloud2_surf.png" width="45%" />
+</p>
+<p align="center">
+  <img src="media_readme/lego.jpg" width="45%" />
+  <img src="media_readme/cloud_3_akaze.png" width="45%" />
+</p>
+<p align="center">
+  <img src="media_readme/statua.jpg" width="45%" />
+  <img src="media_readme/cloud1_surf.png" width="45%" />
+</p>
+
 Prerequisites (in debian-based distro):
 
 sudo apt install build-essential cmake libboost-filesystem-dev libopencv-dev libomp-dev
