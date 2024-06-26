@@ -1,4 +1,4 @@
-# Structure from motion
+#Structure from motion
 
 <p align="center">
   <img src="media_readme/aloe.jpg" width="45%" />
