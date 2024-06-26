@@ -1,9 +1,9 @@
-## Structure from motion
+# Structure from motion
 
-<p align="center">
+<div align="center">
   <img src="media_readme/aloe.jpg" width="45%" />
   <img src="media_readme/cloud2_surf.png" width="45%" />
-</p>
+</div>
 <p align="center">
   <img src="media_readme/lego.jpg" width="45%" />
   <img src="media_readme/cloud_3_akaze.png" width="45%" />
