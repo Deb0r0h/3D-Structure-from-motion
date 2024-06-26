@@ -1,5 +1,7 @@
 # Structure from motion
 
+Structure from motion (SfM) is the process of reconstruct- ing the 3D structure of a scene from its projections into a series of images taken from different viewpoints. The code was tested on two provided datasets of images and a new one acquired with a smart- phone camera. The result of this work is a point cloud that represents a 3D structure of a small scene acquired with our smartphone.
+
 <p align="center">
   <img src="media_readme/aloe.jpg" width="45%" />
   <img src="media_readme/cloud2_surf.png" width="45%" />
@@ -13,6 +15,7 @@
   <img src="media_readme/cloud1_surf.png" width="45%" />
 </p>
 
+## To use it
 Prerequisites (in debian-based distro):
 
 sudo apt install build-essential cmake libboost-filesystem-dev libopencv-dev libomp-dev
